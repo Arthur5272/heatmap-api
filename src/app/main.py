@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.core.database.session import check_db_connection, create_tables
-from app.infra.http.controllers.router import api_router
+from app.infra.http.router import api_router
 from app.core.scheduler import start_scheduler, stop_scheduler, run_ingestion
 
 app = FastAPI(
@@ -44,5 +44,14 @@ async def read_root():
     Root endpoint that returns a welcome message.
     """
     return JSONResponse(content={"message": "API started!"})
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint.
+    """
+    return JSONResponse(content={"status": "ok"})
+
 
 app.include_router(api_router, prefix="/api/v1")

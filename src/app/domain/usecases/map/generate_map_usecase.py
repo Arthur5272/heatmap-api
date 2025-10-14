@@ -1,74 +1,82 @@
 import folium
 import pandas as pd
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.infra.db.repositories.dengue_repository import DengueRepository
-
-# Dados de geolocalização simulados para as cidades
-# Em um projeto real, isso viria de um banco de dados ou API de geocodificação
-mock_geo_data = {
-    "São Paulo": {"lat": -23.5505, "lon": -46.6333},
-    "Rio de Janeiro": {"lat": -22.9068, "lon": -43.1729},
-    "Belo Horizonte": {"lat": -19.9167, "lon": -43.9345},
-    "Salvador": {"lat": -12.9747, "lon": -38.4767},
-    "Fortaleza": {"lat": -3.7327, "lon": -38.5267},
-}
+import branca.colormap as cm
+from app.core.env.settings import settings
+import requests
+import json
 
 class GenerateDengueMapUsecase:
-    def __init__(self, session: AsyncSession):
-        self.dengue_repository = DengueRepository(session)
+    def __init__(self):
+        pass
 
-    async def execute(self) -> str:
+    async def execute(self, state: str = "PE", year: int = 2024, palette: str = "YlOrRd") -> str:
         """
-        Gera um mapa HTML interativo com os dados de incidência de dengue.
+        Gera um mapa HTML coroplético com dados de incidência de dengue.
         """
         print("Iniciando a geração do mapa de dengue...")
-        
-        # 1. Buscar dados do banco
-        incidences = await self.dengue_repository.get_all_incidences()
-        if not incidences:
-            print("Nenhum dado de incidência encontrado para gerar o mapa.")
-            # Retorna um mapa centrado no Brasil se não houver dados
-            m = folium.Map(location=[-14.2350, -51.9253], zoom_start=4)
-            return m._repr_html_()
 
-        # 2. Processar os dados com Pandas para agregação
-        data = [
-            {
-                "city": i.city,
-                "state": i.state,
-                "cases": i.cases,
-                "date": i.date,
-                "lat": mock_geo_data.get(i.city, {}).get("lat"),
-                "lon": mock_geo_data.get(i.city, {}).get("lon"),
-            }
-            for i in incidences
-        ]
-        df = pd.DataFrame(data)
+        # 1. Obter GeoJSON dos municípios do Brasil
+        try:
+            geojson_response = requests.get(settings.GEOJSON_SOURCE)
+            geojson_response.raise_for_status()
+            geojson_data = geojson_response.json()
+        except requests.RequestException as e:
+            print(f"Erro ao baixar GeoJSON: {e}")
+            return "<h1>Erro ao carregar dados geográficos.</h1>"
 
-        # Agrupar por cidade para ter o total de casos e a localização
-        df_agg = df.groupby('city').agg({
-            'cases': 'sum',
-            'lat': 'first',
-            'lon': 'first'
-        }).reset_index()
+        # Filtrar GeoJSON para o estado de Pernambuco (código IBGE de PE é 26)
+        pe_geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                feature for feature in geojson_data["features"]
+                if feature["properties"]["GEOCODIGO"].startswith("26")
+            ]
+        }
+
+        # 2. Dados de dengue (simulados por enquanto)
+        # Em uma implementação real, viria do DengueRepository
+        mock_cases_data = {
+            "2611606": 1500,  # Recife
+            "2607901": 800,   # Jaboatão dos Guararapes
+            "2609600": 600,   # Olinda
+            "2604106": 1200,  # Caruaru
+            "2610707": 950,   # Petrolina
+            "2611101": 400,   # Paulista
+            "2602902": 300,   # Cabo de Santo Agostinho
+            # Adicionar mais municípios de PE conforme necessário
+        }
+        cases_map = {int(k): v for k, v in mock_cases_data.items()}
+        max_cases = max(cases_map.values()) if cases_map else 1
 
         # 3. Criar o mapa com Folium
-        # Centraliza o mapa na primeira cidade da lista
-        map_center = [df_agg['lat'].iloc[0], df_agg['lon'].iloc[0]]
-        m = folium.Map(location=map_center, zoom_start=5)
+        map_center = [-8.34, -37.81]  # Centro de Pernambuco
+        m = folium.Map(location=map_center, zoom_start=7, tiles="cartodbpositron")
 
-        # Adicionar marcadores para cada cidade
-        for _, row in df_agg.iterrows():
-            if pd.notna(row['lat']) and pd.notna(row['lon']):
-                folium.CircleMarker(
-                    location=[row['lat'], row['lon']],
-                    radius=5, # Raio do círculo
-                    popup=f"Cidade: {row['city']}<br>Total de Casos: {row['cases']}",
-                    color='crimson',
-                    fill=True,
-                    fill_color='crimson'
-                ).add_to(m)
+        colormap = cm.LinearColormap(
+            colors=['#ffffcc', '#a1dab4', '#41b6c4', '#2c7fb8', '#253494'],
+            vmin=0,
+            vmax=max_cases
+        )
+        colormap.caption = "Casos de dengue"
+
+        def style_function(feature):
+            municipality_id = int(feature['properties']['GEOCODIGO'])
+            cases = cases_map.get(municipality_id, 0)
+            return {
+                'fillColor': colormap(cases),
+                'color': 'black',
+                'weight': 0.5,
+                'fillOpacity': 0.7,
+            }
+
+        folium.GeoJson(
+            pe_geojson,
+            style_function=style_function,
+            name="Municípios de Pernambuco"
+        ).add_to(m)
+
+        colormap.add_to(m)
+        folium.LayerControl().add_to(m)
 
         print("Mapa gerado com sucesso.")
-        # Retorna o HTML do mapa
         return m._repr_html_()

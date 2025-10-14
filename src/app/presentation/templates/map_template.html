@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Mapa Dengue - {{state}} - {{year}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body { font-family: Inter, Arial, sans-serif; margin:0; padding:0; }
+      #map { height: 100vh; width: 100%; }
+      .controls { position: absolute; top: 10px; left: 10px; z-index: 999; background: rgba(255,255,255,0.9); padding:8px; border-radius:6px; }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <label>Ano: <select id="year"><option>{{ year }}</option></select></label>
+      <label>Paleta: <select id="palette"><option>YlOrRd</option></select></label>
+    </div>
+    <div id="map">
+      {{ folium_map | safe }}
+    </div>
+  </body>
+</html>
